@@ -38,6 +38,47 @@ export function ComplianceCommandCenter() {
   const [organizationId, setOrganizationId] = useState<string | null>(null)
   const [lastAutoSaveSig, setLastAutoSaveSig] = useState<string | null>(null)
 
+  useEffect(() => {
+    async function loadSavedAnswers() {
+      const supabase = createClient()
+      const { data: userData } = await supabase.auth.getUser()
+      const userId = userData.user?.id
+      if (!userId) return
+
+      const { data: membership } = await supabase
+        .from("org_members")
+        .select("organization_id")
+        .eq("user_id", userId)
+        .limit(1)
+        .maybeSingle()
+
+      const orgId = membership?.organization_id
+      if (!orgId) return
+      setOrganizationId(orgId)
+
+      const { data: assessment } = await supabase
+        .from("assessments")
+        .select("answers")
+        .eq("organization_id", orgId)
+        .not("answers", "is", null)
+        .order("created_at", { ascending: false })
+        .limit(1)
+        .maybeSingle()
+
+      if (!assessment?.answers || typeof assessment.answers !== "object") return
+
+      const saved = assessment.answers as Record<string, { value: string; label: string; score: number } | null>
+      const restored: AssessmentAnswerMap = {}
+      for (const [qId, opt] of Object.entries(saved)) {
+        if (opt && typeof opt === "object" && "value" in opt) {
+          restored[qId] = opt as { value: string; label: string; score: number }
+        }
+      }
+      if (Object.keys(restored).length > 0) setAnswers(restored)
+    }
+    void loadSavedAnswers()
+  }, [])
+
   const reportSummary = useReportSummary(assessmentQuestions, answers)
   const benchmark = useBenchmarkSnapshot(reportSummary.complianceScore)
   const timeline = useRiskTimeline(
